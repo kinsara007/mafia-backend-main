@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from src.services.room_service import validate_room_code
+from src.services.room_service import validate_room_code, get_lobby
 from fastapi import HTTPException
 from src.models.user import User
 from src.utils.constant import RoomStatus
@@ -13,8 +13,10 @@ from src.dtos.gameAction import ActionRequest, NightActionResponse, DetectiveRes
 from src.models.game_action import GameAction
 from datetime import datetime
 from src.models.room import Room
+from redis.asyncio import Redis
+from src.utils.cache import invalidate_cached_lobby
 
-async def start_game(user_id, db:Session, room_code:str):
+async def start_game(user_id, db:Session, room_code:str, redis: Redis):
 
     # 1. verify the room by code
     room= validate_room_code(room_code, db)
@@ -84,6 +86,7 @@ async def start_game(user_id, db:Session, room_code:str):
 
     # 10. Commit everything
     db.commit()
+    await invalidate_cached_lobby(redis, room.room_id, room.roomcode)
 
     return {"msg":"Game started Successfully", "game_id": game.game_id, "room_id":room.room_id}
 
@@ -773,7 +776,7 @@ def build_game_state_response(db: Session, game: Game, user: User) -> dict:
 
 
 
-def fetch_state(db: Session, room_code: str, user: User):
+async def fetch_state(db: Session, room_code: str, user: User, redis: Redis):
     room = db.query(Room).filter(Room.roomcode == room_code).first()
     if not room:
         raise HTTPException(404, detail="Room not found")
@@ -789,13 +792,12 @@ def fetch_state(db: Session, room_code: str, user: User):
     game = db.query(Game).filter(Game.room_id == room.room_id).order_by(Game.started_at.desc()).first()
 
     if not game:
-        # Game hasn't started yet — return lobby state
-        all_room_players = db.query(Room_Player).filter(Room_Player.room_id == room.room_id).all()
+        lobby = await get_lobby(room, db, redis)
         return {
             "status": "LOBBY",
             "room_code": room.roomcode,
-            "host_id": room.host_id,
-            "players": [rp.user_id for rp in all_room_players]
+            "host_id": lobby["host_id"],
+            "players": [player["id"] for player in lobby["players"]],
         }
 
     # Game exists — return full game state (your existing logic)

@@ -9,5 +9,11 @@ class Settings(BaseSettings):
     MAX_PLAYERS:int
     MIN_PLAYERS:int
     FRONTEND_URL: str | None = None
+    REDIS_URL: str | None = None
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    CACHE_TTL: int = 1800
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 30
 
 settings= Settings()

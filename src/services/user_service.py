@@ -5,6 +5,8 @@ from fastapi import HTTPException
 from src.utils import auth
 from datetime import datetime, timedelta
 from src.utils.settings import settings
+from src.utils.cache import set_cached_user
+from redis.asyncio import Redis
 import jwt
 
 def register(user:UserDTO, db:Session):
@@ -27,7 +29,7 @@ def register(user:UserDTO, db:Session):
     return new_user
 
 
-def login(data:LoginDTO, db:Session):
+async def login(data:LoginDTO, db:Session, redis:Redis):
 
     user= db.query(User).filter(User.email==data.email).first()
     if not user:
@@ -40,6 +42,7 @@ def login(data:LoginDTO, db:Session):
     exp_time= datetime.now()+timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token= jwt.encode({"email":user.email, "exp":exp_time}, settings.SECRET_KEY, 
                              settings.ALGORITHM)
+    await set_cached_user(redis, user)
     return {
         "access_token": access_token,
         "user": {

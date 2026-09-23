@@ -7,10 +7,31 @@ from src.routes.game import game_route
 from src.ws.route import router
 from fastapi.middleware.cors import CORSMiddleware
 from src.utils.settings import settings
+from contextlib import asynccontextmanager
+from redis.asyncio import Redis
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Starting Redis...")
+    if settings.REDIS_URL:
+        app.state.redis = Redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+        )
+    else:
+        app.state.redis = Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            decode_responses=True,
+        )
+    yield
+    print("Closing Redis...")
+    await app.state.redis.close()
+
 
 Base.metadata.create_all(engine)
 
-app= FastAPI(title="Mafia game")
+app= FastAPI(title="Mafia game", lifespan=lifespan)
 
 
 origins = [

@@ -9,16 +9,18 @@ from src.utils.db import Session as SessionLocal
 from src.ws.service import start_night_timer
 from src.ws.connection_manager import manager
 from src.utils.constant import NIGHT_DURATION_SECONDS
+from src.utils.cache import get_redis
 
 game_route= APIRouter(prefix="/game")
 
 #start a game
 @game_route.post("/{room_code}/start", status_code= status.HTTP_201_CREATED)
-async def start_game(room_code:str, user=Depends(is_authenticated), db=Depends(get_db)):
+async def start_game(room_code:str, user=Depends(is_authenticated), db=Depends(get_db), redis=Depends(get_redis)):
     result = await game_service.start_game(
         user.id,
         db,
-        room_code
+        room_code,
+        redis,
     )
     await manager.broadcast_to_room( result["room_id"], {
         "event": "game_started",
@@ -80,9 +82,10 @@ def resolve_morning(game_id:str , db=Depends(get_db)):
 
 # endpoint for fetching the current state of the game
 @game_route.get("/game/{room_code}/state")
-def get_game_state(
+async def get_game_state(
     room_code: str,
     user = Depends(is_authenticated),
-    db = Depends(get_db)
+    db = Depends(get_db),
+    redis = Depends(get_redis),
 ):
-    return game_service.fetch_state(db, room_code, user)
+    return await game_service.fetch_state(db, room_code, user, redis)

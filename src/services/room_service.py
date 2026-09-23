@@ -8,6 +8,9 @@ from src.utils.settings import settings
 from src.dtos.room import RoomPlayerResponse
 from src.dtos.user import UserResponse
 from src.ws.connection_manager import manager
+from src.utils.db import Session as SessionLocal
+from src.utils import cache
+from redis.asyncio import Redis
 
 import random
 import string
@@ -68,7 +71,7 @@ def validate_room_code(room_code:str, db:Session):
 
 
 #join a room
-async def join_room(room_code:str, db:Session, user:User):
+async def join_room(room_code:str, db:Session, user:User, redis:Redis):
 
     # 1. find the room
     room= validate_room_code(room_code, db)
@@ -111,11 +114,14 @@ async def join_room(room_code:str, db:Session, user:User):
     db.refresh(room_player)
     room_players = db.query(Room_Player).filter(Room_Player.room_id == room.room_id).all()
 
+    snapshot = room_snapshot(room, db)
+    await cache.set_cached_lobby(redis, room.room_id, snapshot)
+
     return {
         "msg":"User joined the room successfully",
         "room_players": room_players,
         "room_id": room.room_id,
-        "lobby": room_snapshot(room, db),
+        "lobby": snapshot,
     }
 
 
@@ -140,29 +146,50 @@ def serialize_room_details(room: Room, db: Session) -> RoomPlayerResponse:
 
 
 def room_snapshot(room: Room, db: Session) -> dict:
-    return serialize_room_details(room, db).model_dump()
+    payload = serialize_room_details(room, db).model_dump(mode="json")
+    payload["room_code"] = room.roomcode
+    return payload
+
+
+async def get_lobby(room: Room, db: Session, redis: Redis) -> dict:
+    cached = await cache.get_cached_lobby(redis, room.room_id)
+    if cached:
+        return cached
+    snapshot = room_snapshot(room, db)
+    await cache.set_cached_lobby(redis, room.room_id, snapshot)
+    return snapshot
 
 
 #get room details
-def fetch_room_details(room_code:str, db:Session, user_id:int):
+async def fetch_room_details(room_code:str, user_id:int, redis:Redis, db:Session | None=None):
+    cached = await cache.get_cached_lobby_by_code(redis, room_code)
+    if cached:
+        if any(player.get("id") == user_id for player in cached.get("players", [])):
+            return cached
+        raise HTTPException(403, "You are not allowed to access this room")
 
-    # 1. find room
-    room= validate_room_code(room_code, db)
-    if not room:
-        raise HTTPException(404, detail="Room does not exist")
+    owns_session = db is None
+    if owns_session:
+        db = SessionLocal()
+    try:
+        room= validate_room_code(room_code, db)
+        if not room:
+            raise HTTPException(404, detail="Room does not exist")
 
-    # 2.  Check whether the requesting user belongs to this room
-    is_user= db.query(Room_Player).filter(Room_Player.user_id==user_id,
-                                          Room_Player.room_id == room.room_id).first()
-    if not is_user:
-            raise HTTPException(403, "You are not allowed to access this room")
+        is_user= db.query(Room_Player).filter(Room_Player.user_id==user_id,
+                                              Room_Player.room_id == room.room_id).first()
+        if not is_user:
+                raise HTTPException(403, "You are not allowed to access this room")
 
-    return serialize_room_details(room, db)
+        return await get_lobby(room, db, redis)
+    finally:
+        if owns_session:
+            db.close()
 
 
 
 #Leave a room
-async def leave_room(room_code: str, user_id: int, db: Session):
+async def leave_room(room_code: str, user_id: int, db: Session, redis:Redis):
     room = db.query(Room).filter(Room.roomcode == room_code).first()
     if not room:
         raise HTTPException(404, detail="Room not found")
@@ -186,6 +213,7 @@ async def leave_room(room_code: str, user_id: int, db: Session):
         db.query(Room_Player).filter(Room_Player.room_id == room.room_id).delete()
         db.delete(room)
         db.commit()
+        await cache.invalidate_cached_lobby(redis, room.room_id, room.roomcode)
 
         # Notify everyone still connected before their sockets become orphaned
         await manager.broadcast_to_room(room.room_id, {
@@ -200,6 +228,8 @@ async def leave_room(room_code: str, user_id: int, db: Session):
     db.commit()
 
     snapshot = room_snapshot(room, db)
+    await cache.set_cached_lobby(redis, room.room_id, snapshot)
+
     await manager.broadcast_to_room(room.room_id, {
         "event": "lobby_updated",
         "data": {**snapshot, "reason": "player_left", "user_id": user_id}
