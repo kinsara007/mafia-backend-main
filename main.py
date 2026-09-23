@@ -13,7 +13,16 @@ from redis.asyncio import Redis
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting Redis...")
-    if settings.REDIS_URL:
+    if settings.REDIS_PASSWORD:
+        app.state.redis = Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            username=settings.REDIS_USERNAME,
+            password=settings.REDIS_PASSWORD,
+            ssl=settings.REDIS_SSL,
+            decode_responses=True,
+        )
+    elif settings.REDIS_URL:
         app.state.redis = Redis.from_url(
             settings.REDIS_URL,
             decode_responses=True,

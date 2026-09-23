@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     REDIS_URL: str | None = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+    REDIS_USERNAME: str = "default"
+    REDIS_SSL: bool = False
     CACHE_TTL: int = 1800
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 30
