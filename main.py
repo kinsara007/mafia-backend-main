@@ -24,6 +24,11 @@ async def lifespan(app: FastAPI):
             port=settings.REDIS_PORT,
             decode_responses=True,
         )
+    try:
+        await app.state.redis.ping()
+        print("Redis ping ok")
+    except Exception as e:
+        print("Redis ping failed:", e)
     yield
     print("Closing Redis...")
     await app.state.redis.close()
