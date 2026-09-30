@@ -10,12 +10,25 @@ from src.utils.settings import settings
 from contextlib import asynccontextmanager
 from redis.asyncio import Redis
 
+
+def redis_hostname(host: str) -> str:
+    host = host.strip()
+    for prefix in ("https://", "http://", "rediss://", "redis://"):
+        if host.lower().startswith(prefix):
+            host = host[len(prefix):]
+    host = host.split("/")[0]
+    if host.count(":") == 1:
+        host = host.split(":")[0]
+    return host
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting Redis...")
+    redis_host = redis_hostname(settings.REDIS_HOST)
     if settings.REDIS_PASSWORD:
         app.state.redis = Redis(
-            host=settings.REDIS_HOST,
+            host=redis_host,
             port=settings.REDIS_PORT,
             username=settings.REDIS_USERNAME,
             password=settings.REDIS_PASSWORD,
@@ -29,7 +42,7 @@ async def lifespan(app: FastAPI):
         )
     else:
         app.state.redis = Redis(
-            host=settings.REDIS_HOST,
+            host=redis_host,
             port=settings.REDIS_PORT,
             decode_responses=True,
         )

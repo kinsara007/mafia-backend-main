@@ -1,5 +1,5 @@
 from fastapi import APIRouter, WebSocket, Query, Depends, WebSocketDisconnect
-from jwt import InvalidTokenError
+from jwt import InvalidTokenError, ExpiredSignatureError
 from src.utils.db import get_db
 from src.models.user import User
 from src.ws.connection_manager import manager
@@ -19,9 +19,17 @@ async def room_websocket(websocket: WebSocket, room_id: str, token: str = Query(
     try:
         payload = decode_access_token(token)
         user_email = payload.get("email")
-    except (InvalidTokenError, KeyError):
-        await websocket.close(code=1008)
+    except ExpiredSignatureError:
+        await websocket.accept()
+        await websocket.close(code=4401, reason="token_expired")
         return
+    except InvalidTokenError:
+        await websocket.accept()
+        await websocket.close(code=4403, reason="invalid_token")
+        return
+    # except (InvalidTokenError, KeyError):
+    #     await websocket.close(code=1008)
+    #     return
 
     if not user_email:
         await websocket.close(code=1008)

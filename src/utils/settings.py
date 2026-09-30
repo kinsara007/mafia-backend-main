@@ -18,5 +18,6 @@ class Settings(BaseSettings):
     CACHE_TTL: int = 1800
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int =30
 
 settings= Settings()

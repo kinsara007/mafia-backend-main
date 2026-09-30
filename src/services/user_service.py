@@ -40,11 +40,15 @@ async def login(data:LoginDTO, db:Session, redis:Redis):
         raise HTTPException(400, detail="Incorrect Password")
 
     exp_time= datetime.now()+timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token= jwt.encode({"email":user.email, "exp":exp_time}, settings.SECRET_KEY, 
-                             settings.ALGORITHM)
+    # access_token= jwt.encode({"email":user.email, "exp":exp_time}, settings.SECRET_KEY, 
+    #                          settings.ALGORITHM)
+    access_token = auth.create_token(user.email, "access", timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    refresh_token = auth.create_token(user.email, "refresh", timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
+
     await set_cached_user(redis, user)
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "user": {
             "id": user.id,
             "name": user.name,

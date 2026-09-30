@@ -17,8 +17,24 @@ def verify_password(plain_password, hashed_password):
     return password_hash.verify(plain_password, hashed_password)
 
 
-def decode_access_token(access_token: str) -> dict:
-    return jwt.decode(access_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+# def decode_access_token(access_token: str) -> dict:
+#     return jwt.decode(access_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+
+def decode_access_token(token: str, expected_type: str = "access") -> dict:
+    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    if payload.get("type") != expected_type:      # stops a refresh token being used as an access token
+        raise InvalidTokenError("Wrong token type")
+    return payload
+
+
+from datetime import datetime, timedelta, timezone
+
+def create_token(email: str, token_type: str, expires: timedelta) -> str:
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {"email": email, "type": token_type, "iat": now, "exp": now + expires},
+        settings.SECRET_KEY, algorithm=settings.ALGORITHM,
+    )
 
 
 async def is_authenticated(request:Request, redis: Redis = Depends(get_redis)):

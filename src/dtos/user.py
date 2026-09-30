@@ -14,3 +14,6 @@ class UserResponse(BaseModel):
 class LoginDTO(BaseModel):
     email:str
     password:str
+
+class RefreshDTO(BaseModel):
+    refresh_token: str
